@@ -1,0 +1,8 @@
+#[mons]
+#ceph-mon-[1:3]
+
+#[osds]
+#ceph-node-[1:3]
+
+[suppiler]
+suppiler

@@ -1,0 +1,106 @@
+---
+- name: preparation for ceph installation
+  hosts: all
+  remote_user: root
+  vars:
+    - ceph_ver: jewel
+
+  tasks:
+    - name: create ceph group
+      group:
+        name: ceph
+        state: present
+
+    - name: create ceph user
+      user:
+        name: ceph
+        group: ceph
+
+    - name: setup ssh passwordless login for ceph user
+      authorized_key:
+        user: ceph
+        key: "{{ lookup('file', '/root/.ssh/id_rsa.pub') }}"
+
+    - name: stop and disable firewalld
+      service:
+        name: firewalld
+        state: stopped
+        enabled: no
+
+    - name: disable Selinux
+      selinux:
+        state: disabled
+
+    - name: disable selinux runtime
+      command: setenforce 0
+
+    - name: Modify sshd configuration file
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: 'GSSAPIAuthentication yes'
+        line: 'GSSAPIAuthentication no'
+
+    - name: Modify sshd configuration file
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '#UseDNS yes'
+        line: 'UseDNS no'
+      notify:
+        - restart_sshd
+
+    - name: setup sudo privilages
+      blockinfile:
+        path: /etc/sudoers
+        backup: yes
+        block: |
+          Defaults:root !requiretty
+          Defaults:ceph !requiretty
+          Defaults:devops !requiretty
+          ceph ALL=(ALL) NOPASSWD: ALL
+          devops ALL=(ALL) NOPASSWD: ALL
+
+    - name: install centos ceph
+      yum:
+        name: centos-release-ceph-{{ ceph_ver }}
+        state: latest
+      when: inventory_hostname in groups['suppiler']
+
+    - name: install ceph-ansible
+      yum:
+        name: ceph-ansible
+        state: latest
+      when: inventory_hostname in groups['suppiler']
+      notify:
+        - update_ceph_ansible_conf_all
+        - update_ceph_ansible_conf_keys
+        - update_ceph_ansible_conf_mons
+        - update_ceph_ansible_conf_osds
+
+
+  handlers:
+    - name: restart_sshd
+      service:
+        name: sshd
+        state: restarted
+
+    - name: update_ceph_ansible_conf_all
+      template:
+        src: ceph-install-files/all.yml.j2
+        dest: /usr/share/ceph-ansible/group_vars/all.yml
+        backup: yes
+
+    - name: update_ceph_ansible_conf_keys
+      template:
+        src: ceph-install-files/ceph-fetch-keys.yml.j2
+        dest: /usr/share/ceph-ansible/group_vars/ceph-fetch-keys.yml
+        backup: yes
+    - name: update_ceph_ansible_conf_mons
+      template:
+        src: ceph-install-files/mons.yml.j2
+        dest: /usr/share/ceph-ansible/group_vars/mons.yml
+        backup: yes
+    - name: update_ceph_ansible_conf_osds
+      template:
+        src: ceph-install-files/osds.yml.j2
+        dest: /usr/share/ceph-ansible/group_vars/osds.yml
+        backup: yes
